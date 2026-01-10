@@ -3,14 +3,12 @@ use std::fs::File;
 use std::path::Path;
 
 // Symphonia: The Pure Rust Audio Decoder
-use symphonia::core::audio::{AudioBuffer, Signal};
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
-use symphonia::core::conv::IntoSample;
 
 /// 🚀 THE PHYSICS ENGINE
 /// Loads any audio file, converts to f32, mixes to Stereo, and Normalizes.
