@@ -9,4 +9,9 @@ name = "audio_core"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0.27.0"
+anyhow = "1.0.100"
+numpy = "0.27.1"
+pyo3 = { version = "0.27.0", features = ["extension-module"] }
+rubato = "1.0.0"
+rustfft = "6.4.1"
+symphonia = { version = "0.5.5", features = ["all", "opt-simd"] }
