@@ -92,8 +92,8 @@ pub fn load_and_normalize(path: &str) -> Result<(Vec<f32>, u32)> {
     let max_amp = all_samples.iter().fold(0.0f32, |acc, &x| acc.max(x.abs()));
 
     // B. Calculate Gain Factor
-    // Target is -1.0 dB approx 0.89125
-    let target_peak = 0.89125;
+    // Target is -1.0 dB approx 
+    let target_peak = 0.905;
     
     // Avoid division by zero (silence protection)
     if max_amp > 1e-6 {
