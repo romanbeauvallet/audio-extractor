@@ -25,7 +25,9 @@ def test_spectral_integrity():
     # 2. RUN RUST (Load -> STFT -> ISTFT -> Return)
     # ---------------------------------------------------------
     try:
-        audio_data, sample_rate = audio_core.debug_spectral_roundtrip(INPUT_FILE)
+        # Rust returns (List[float], int). We must convert the list to a numpy array.
+        audio_data_list, sample_rate = audio_core.debug_spectral_roundtrip(INPUT_FILE)
+        audio_data = np.array(audio_data_list, dtype=np.float32)
     except Exception as e:
         print(f"❌ Rust Error: {e}")
         return
@@ -55,7 +57,7 @@ def test_spectral_integrity():
 
     print("-" * 40)
     print(f"SUCCESS! File saved: {os.path.abspath(OUTPUT_FILE)}")
-    print("🎧 LISTEN NOW: Compare the INPUT vs. the output.")
+    print("LISTEN NOW: Compare the INPUT vs. the output.")
     print(
         "   They should sound IDENTICAL. If you hear 'robotic' artifacts, the windowing math is wrong."
     )
@@ -89,10 +91,11 @@ def normalize(sig):
 
 
 def plot_analysis():
-    print(f"🦀 Calls Rust Engine to process: {INPUT_FILE}")
+    print(f"Calls Rust Engine to process: {INPUT_FILE}")
 
     # This triggers the 'println!' in Rust and runs the new WOLA math
-    reconstructed_audio, sr = audio_core.debug_spectral_roundtrip(INPUT_FILE)
+    reconstructed_list, sr = audio_core.debug_spectral_roundtrip(INPUT_FILE)
+    reconstructed_audio = np.array(reconstructed_list, dtype=np.float32)
 
     # Save the NEW result to disk (Overwriting the old bad file)
     # Rust returns interleaved [L, R], reshape if stereo
@@ -102,7 +105,7 @@ def plot_analysis():
         audio_to_save = reconstructed_audio
 
     sf.write(OUTPUT_FILE, audio_to_save, sr)
-    print(f"✅ New WOLA output saved to: {OUTPUT_FILE}")
+    print(f"New WOLA output saved to: {OUTPUT_FILE}")
 
     print(f"📊 Analyzing: {INPUT_FILE} vs {OUTPUT_FILE}")
 
@@ -129,10 +132,10 @@ def plot_analysis():
 
     # Plot 1: Waveforms
     axes[0].set_title("Time Domain: Signal Overlay")
-    axes[0].plot(sig_in[10000:11000], label="INPUT", alpha=0.7)
-    axes[0].plot(
-        sig_out[10000:11000], label="Reconstruction", alpha=0.7, linestyle="--"
-    )
+    # Plot a slice from the middle to see details
+    #
+    axes[0].plot(sig_in, label="INPUT", alpha=0.7)
+    axes[0].plot(sig_out, label="Reconstruction", alpha=0.7, linestyle="--")
     axes[0].legend()
     axes[0].set_ylabel("Amplitude")
 
@@ -175,9 +178,12 @@ def plot_analysis():
     fig.colorbar(im, ax=axes[2], label="Error Magnitude (dB)")
 
     plt.tight_layout()
+    # Ensure the directory exists before saving
+    os.makedirs("physics_results", exist_ok=True)
     plt.savefig("physics_results/spectral_roundtrip_analysis.png")
     plt.show()
 
 
 if __name__ == "__main__":
+    test_spectral_integrity()
     plot_analysis()

@@ -6,8 +6,8 @@ import os
 # ---------------------------------------------------------
 # 1. SETUP
 # ---------------------------------------------------------
-INPUT_FILE = "test_rust.m4a"
-OUTPUT_FILE = "rust_output_verified.wav"
+INPUT_FILE = "audio/test_reference.wav"
+OUTPUT_FILE = "audio/loading_ref.wav"
 
 
 def test_rust_loading():
