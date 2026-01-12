@@ -19,29 +19,23 @@ fn load_track<'py>(py: Python<'py>, path: String) -> PyResult<(Bound<'py, PyArra
 }
 
 #[pyfunction]
-fn debug_spectral_roundtrip<'py>(
-    py: Python<'py>,
-    path: String,
-) -> PyResult<(Bound<'py, PyArray1<f32>>, u32)> {
-    // A. Load File
-    let (input_samples, sr) = audio_ops::load_and_normalize(&path)
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+fn debug_spectral_roundtrip(path: String) -> PyResult<(Vec<f32>, u32)> {
+    // Call the internal loader
+    let (samples, sample_rate) = match audio_ops::load_and_normalize(&path) {
+        Ok(res) => res,
+        Err(e) => return Err(pyo3::exceptions::PyRuntimeError::new_err(e.to_string())),
+    };
 
-    // B. Initialize the Spectral Engine
+    // Initialize Engine
     let engine = SpectralEngine::new(4096, 1024);
 
-    // C. Run the Physics
-    // Time -> Frequency
-    let spectrogram = engine.stft(&input_samples);
+    // FIX THE "SIZED" ERROR:
+    // Pass '&samples' (reference), not 'samples' (value)
+    let spectrogram = engine.stft(&samples);
 
-    // Frequency -> Time
-    let reconstructed_samples = engine.istft(&spectrogram);
+    let reconstruction = engine.istft(&spectrogram);
 
-    // D. Return to Python
-    // We return the RECONSTRUCTED audio, not the original.
-    let py_output = reconstructed_samples.into_pyarray(py);
-
-    Ok((py_output, sr))
+    Ok((reconstruction, sample_rate))
 }
 
 /// 3. MODULE DEFINITION (Bound API)

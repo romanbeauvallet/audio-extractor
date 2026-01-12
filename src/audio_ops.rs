@@ -3,7 +3,6 @@ use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
 
-// Symphonia: The Pure Rust Audio Decoder
 use symphonia::core::codecs::{CODEC_TYPE_NULL, DecoderOptions};
 use symphonia::core::errors::Error;
 use symphonia::core::formats::FormatOptions;
@@ -14,12 +13,10 @@ use symphonia::core::probe::Hint;
 use ndarray::{Array2, Axis};
 use rustfft::{Fft, FftPlanner, num_complex::Complex};
 
-/// 🚀 THE PHYSICS ENGINE
 /// Loads any audio file, converts to f32, mixes to Stereo, and Normalizes.
 /// Returns: (Interleaved Samples, Sample Rate)
 pub fn load_and_normalize(path: &str) -> Result<(Vec<f32>, u32)> {
     // 1. OPEN THE INPUT
-    // We create a "Media Source" from the file path.
     let src = File::open(Path::new(path))?;
     let mss = MediaSourceStream::new(Box::new(src), Default::default());
 
@@ -63,7 +60,6 @@ pub fn load_and_normalize(path: &str) -> Result<(Vec<f32>, u32)> {
         if packet.track_id() == track_id {
             match decoder.decode(&packet) {
                 Ok(decoded) => {
-                    // "decoded" is a raw AudioBuffer (could be Int16, Int24, Float32)
                     // We must standardize everything to Float32 [-1.0, 1.0]
 
                     // We create a specific f32 buffer to copy data into
@@ -75,7 +71,6 @@ pub fn load_and_normalize(path: &str) -> Result<(Vec<f32>, u32)> {
                     // Copy and Convert (Int -> Float) happens here
                     sample_buf.copy_interleaved_ref(decoded);
 
-                    // Extend our main storage
                     all_samples.extend_from_slice(sample_buf.samples());
                 }
                 Err(Error::IoError(_)) => break,
@@ -108,24 +103,26 @@ pub fn load_and_normalize(path: &str) -> Result<(Vec<f32>, u32)> {
     Ok((all_samples, sample_rate))
 }
 
-// ----------------------------------------------------------------
-// 2. THE SPECTRAL ENGINE (New Code)
-// ----------------------------------------------------------------
+// THE SPECTRAL ENGINE (New Code)
+// src/audio_ops.rs
+
 pub struct SpectralEngine {
     fft: Arc<dyn Fft<f32>>,
     ifft: Arc<dyn Fft<f32>>,
     window: Vec<f32>,
     fft_size: usize,
     hop_size: usize,
+    scaling_factor: f32,
 }
 
 impl SpectralEngine {
     pub fn new(fft_size: usize, hop_size: usize) -> Self {
+        println!("🦀 RUST: WOLA Spectral Engine Initialized (Fixed!)");
         let mut planner = FftPlanner::new();
         let fft = planner.plan_fft_forward(fft_size);
         let ifft = planner.plan_fft_inverse(fft_size);
 
-        // Hanning Window: Reduces spectral leakage at edges
+        // 1. Generate Hanning Window
         // w[n] = 0.5 * (1 - cos(2*pi*n / N))
         let window: Vec<f32> = (0..fft_size)
             .map(|i| {
@@ -133,40 +130,53 @@ impl SpectralEngine {
             })
             .collect();
 
+        // 2. Calculate WOLA Scaling Factor
+        // We apply the window TWICE (Analysis + Synthesis).
+        // For COLA (Constant Overlap Add) compliance with Hanning:
+        // Factor = Sum(Window^2) / Hop_Size
+        let window_sq_sum: f32 = window.iter().map(|&x| x * x).sum();
+        let scaling_factor = window_sq_sum / (hop_size as f32);
+
         Self {
             fft,
             ifft,
             window,
             fft_size,
             hop_size,
+            scaling_factor,
         }
     }
 
-    /// Forward Transform: Audio (Time) -> Spectrogram (Freq)
     pub fn stft(&self, input: &[f32]) -> Array2<Complex<f32>> {
-        // Calculate number of frames
-        // (Length - FFT_Size) / Hop + 1
-        if input.len() < self.fft_size {
-            return Array2::zeros((1, 1));
-        }
+        let pad_len = self.fft_size / 2;
 
-        let n_frames = (input.len() - self.fft_size) / self.hop_size + 1;
+        // Create input with zeros at start/end
+        let mut padded_input = vec![0.0f32; input.len() + 2 * pad_len];
+        padded_input[pad_len..pad_len + input.len()].copy_from_slice(input);
+
+        // Run FFT on padded data
+        let n_frames = (padded_input.len() - self.fft_size) / self.hop_size + 1;
         let mut spectrogram = Array2::<Complex<f32>>::zeros((self.fft_size, n_frames));
         let mut buffer = vec![Complex::new(0.0, 0.0); self.fft_size];
 
         for (i, mut col) in spectrogram.axis_iter_mut(Axis(1)).enumerate() {
             let start = i * self.hop_size;
-            let end = start + self.fft_size;
+            // Safety check
+            if start + self.fft_size > padded_input.len() {
+                break;
+            }
 
-            // Windowing
-            for (j, (&x, &w)) in input[start..end].iter().zip(&self.window).enumerate() {
+            // Apply Window
+            for (j, (&x, &w)) in padded_input[start..start + self.fft_size]
+                .iter()
+                .zip(&self.window)
+                .enumerate()
+            {
                 buffer[j] = Complex::new(x * w, 0.0);
             }
 
-            // FFT
             self.fft.process(&mut buffer);
 
-            // Store in Matrix
             for j in 0..self.fft_size {
                 col[j] = buffer[j];
             }
@@ -174,50 +184,47 @@ impl SpectralEngine {
         spectrogram
     }
 
-    /// Inverse Transform: Spectrogram (Freq) -> Audio (Time)
+    // 2. ISTFT
     pub fn istft(&self, spectrogram: &Array2<Complex<f32>>) -> Vec<f32> {
         let n_frames = spectrogram.len_of(Axis(1));
-        let output_len = (n_frames - 1) * self.hop_size + self.fft_size;
-        let mut output = vec![0.0f32; output_len];
 
-        // This buffer tracks how much "Window Energy" was added to each pixel.
-        // We divide by this at the end to normalize the Overlap-Add.
-        let mut normalization = vec![1e-10f32; output_len]; // Avoid div/0
-
+        // Calculate expected length based on PADDED frames
+        let padded_len = (n_frames - 1) * self.hop_size + self.fft_size;
+        let mut output = vec![0.0f32; padded_len];
         let mut buffer = vec![Complex::new(0.0, 0.0); self.fft_size];
 
         for (i, col) in spectrogram.axis_iter(Axis(1)).enumerate() {
             let start = i * self.hop_size;
 
-            // Copy Frequency Data to Buffer
+            // Load Freq Domain
             for j in 0..self.fft_size {
                 buffer[j] = col[j];
             }
 
-            // Inverse FFT
+            // Inverse FFT -> Time Domain
             self.ifft.process(&mut buffer);
 
-            // Overlap-Add Logic
+            // Weighted Overlap-Add (WOLA)
             for j in 0..self.fft_size {
-                // rustfft is unnormalized, so we scale by 1/N
                 let val = buffer[j].re / (self.fft_size as f32);
-
-                // Add to output buffer
-                output[start + j] += val;
-
-                // Track the window weight (OLA Normalization)
-                // Note: We only windowed ONCE (during STFT).
-                // Standard COLA constraint assumes the window sums to 1.
-                // Since we used Hanning, we normalize by the window values added.
-                normalization[start + j] += self.window[j];
+                let windowed_val = val * self.window[j];
+                output[start + j] += windowed_val;
             }
         }
 
-        // Apply Normalization (Average the overlaps)
-        for (out, norm) in output.iter_mut().zip(normalization.iter()) {
-            *out /= norm;
+        // Apply Global Scaling
+        for sample in output.iter_mut() {
+            *sample /= self.scaling_factor;
         }
 
-        output
+        // REMOVE PADDING (Critical for Alignment)
+        let pad_len = self.fft_size / 2;
+        if output.len() > 2 * pad_len {
+            // Trim the zeros we added at the start
+            // And trim the end to match original length (approximately)
+            output[pad_len..output.len() - pad_len].to_vec()
+        } else {
+            output
+        }
     }
 }

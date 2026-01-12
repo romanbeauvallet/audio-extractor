@@ -4,12 +4,13 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.signal import welch, stft
+import librosa
 
 # ---------------------------------------------------------
 # 1. SETUP: Change this to your audio file
 # ---------------------------------------------------------
-INPUT_FILE = "test.mp3"
-OUTPUT_FILE = "spectral_roundtrip_output.wav"
+INPUT_FILE = "audio/test_reference.wav"
+OUTPUT_FILE = "audio/spectral_roundtrip_output.wav"
 
 
 def test_spectral_integrity():
@@ -62,10 +63,23 @@ def test_spectral_integrity():
 
 
 def load_mono(path):
-    """Loads audio and forces Mono for spectral comparison."""
-    data, sr = sf.read(path)
+    """
+    Loads audio using Librosa (Independent of Rust).
+    Replicates the Rust normalization logic so we can compare apples to apples.
+    """
+    data, sr = librosa.load(path, sr=None, mono=False)
+
+    # 2. Handle Stereo -> Mono (Average)
     if data.ndim > 1:
-        data = data.mean(axis=1)
+        # data is (2, N), we want average across axis 0
+        data = np.mean(data, axis=0)
+
+    # 3. MANUAL NORMALIZATION (To match Rust's 0.905 peak)
+    max_amp = np.max(np.abs(data))
+    if max_amp > 1e-6:
+        gain = 0.905 / max_amp
+        data *= gain
+
     return data, sr
 
 
@@ -75,6 +89,21 @@ def normalize(sig):
 
 
 def plot_analysis():
+    print(f"🦀 Calls Rust Engine to process: {INPUT_FILE}")
+
+    # This triggers the 'println!' in Rust and runs the new WOLA math
+    reconstructed_audio, sr = audio_core.debug_spectral_roundtrip(INPUT_FILE)
+
+    # Save the NEW result to disk (Overwriting the old bad file)
+    # Rust returns interleaved [L, R], reshape if stereo
+    if len(reconstructed_audio) % 2 == 0:
+        audio_to_save = reconstructed_audio.reshape(-1, 2)
+    else:
+        audio_to_save = reconstructed_audio
+
+    sf.write(OUTPUT_FILE, audio_to_save, sr)
+    print(f"✅ New WOLA output saved to: {OUTPUT_FILE}")
+
     print(f"📊 Analyzing: {INPUT_FILE} vs {OUTPUT_FILE}")
 
     # 1. Load Data
@@ -146,8 +175,9 @@ def plot_analysis():
     fig.colorbar(im, ax=axes[2], label="Error Magnitude (dB)")
 
     plt.tight_layout()
+    plt.savefig("physics_results/spectral_roundtrip_analysis.png")
     plt.show()
 
 
 if __name__ == "__main__":
-    test_spectral_integrity()
+    plot_analysis()
