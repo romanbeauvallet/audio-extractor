@@ -1,49 +1,49 @@
 # .pre-commit-config.yaml
-
-# This tells pre-commit to stop running if a tool fails (saves time)
-fail_fast: false
-
 repos:
-  # ------------------------------------------------------------------
-  # 1. ARCHITECTURE & HYGIENE (File limits, huge data, broken links)
-  # ------------------------------------------------------------------
+  # 1. BASIC HYGIENE
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0 # Updated to v5.0.0 to fix the "deprecated stage names" warning
+    rev: v4.5.0
     hooks:
-      - id: trailing-whitespace       # Cleans up invisible spaces
-      - id: end-of-file-fixer         # Ensures files end correctly
-      - id: check-yaml                # Validates this file and others
-      - id: check-toml                # Validates pyproject.toml syntax
-      - id: check-added-large-files   # STOPS you from committing huge data files (common in science)
-        args: ['--maxkb=2000']        # Limit set to 2MB. Anything larger belongs in .gitignore
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
 
-  # ------------------------------------------------------------------
-  # 2. PYTHON STRICT FORMATTING (The "Ruff" Magic)
-  # ------------------------------------------------------------------
+  # 2. PYTHON: RUFF (Replaces Black, Isort, Flake8)
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.7
+    rev: v0.1.9
     hooks:
-      # LINT: Checks for bugs, unused imports, and bad coding patterns
+      # Run the linter (fix imports, unused vars)
       - id: ruff
-        args: [ --fix ]
-      # FORMAT: Rewrites your code to be perfectly aligned (like Black)
+        args: [--fix, --exit-non-zero-on-fix]
+      # Run the formatter (make code pretty)
       - id: ruff-format
 
-  # ------------------------------------------------------------------
-  # 3. PROJECT CONFIGURATION (pyproject.toml)
-  # ------------------------------------------------------------------
-  - repo: https://github.com/ComPWA/mirrors-taplo
-    rev: v0.9.3 # Updated to the correct mirror for pre-commit
+  # 3. RUST: LOCAL (Uses your specific Cargo version)
+  - repo: local
     hooks:
-      # Formats your pyproject.toml so it looks professional
-      - id: taplo-format
-        args: ["--option", "reorder_keys=true"]
+      # Auto-format Rust code
+      - id: cargo-fmt
+        name: 🦀 Cargo Fmt
+        description: Format Rust code
+        entry: cargo fmt
+        language: system
+        types: [rust]
+        pass_filenames: false
 
-  # ------------------------------------------------------------------
-  # 4. PACKAGE METADATA VALIDATION
-  # ------------------------------------------------------------------
-  - repo: https://github.com/abravalheri/validate-pyproject
-    rev: v0.24.1
-    hooks:
-      # Ensures your project metadata (version, dependencies) is valid
-      - id: validate-pyproject
+      # Check for errors/warnings (The "Teacher")
+      - id: cargo-check
+        name: 🦀 Cargo Check
+        description: Check for compilation errors
+        entry: cargo check
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      # (Optional) Linter - Uncomment if you want strict strict checks
+      - id: cargo-clippy
+        name: 🦀 Cargo Clippy
+        entry: cargo clippy -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false

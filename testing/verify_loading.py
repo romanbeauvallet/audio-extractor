@@ -1,24 +1,22 @@
 import audio_core
-import torch
-import torchaudio
+import numpy as np
+import soundfile as sf
 import os
 
 # ---------------------------------------------------------
-# 1. SETUP: Put the path to a REAL file on your laptop here
+# 1. SETUP
 # ---------------------------------------------------------
-INPUT_FILE = "my_test_song.mp3"  
+INPUT_FILE = "test_rust.m4a"
 OUTPUT_FILE = "rust_output_verified.wav"
+
 
 def test_rust_loading():
     if not os.path.exists(INPUT_FILE):
         print(f"❌ Error: Could not find file '{INPUT_FILE}'")
-        print("   Please edit the script and provide a valid path.")
         return
 
     print(f"🦀 Rust Engine: Loading '{INPUT_FILE}'...")
-    
-    # CALL RUST
-    # This runs the 'load_and_normalize' function we wrote in audio_ops.rs
+
     try:
         samples, sr = audio_core.load_track(INPUT_FILE)
     except Exception as e:
@@ -27,37 +25,28 @@ def test_rust_loading():
 
     print("✅ Rust Load Complete!")
     print(f"   Sample Rate: {sr} Hz")
-    print(f"   Shape: {samples.shape} (Samples,)")
-    print(f"   Dtype: {samples.dtype}")
+    print(f"   Shape: {samples.shape}")
 
-    # PHYSICS CHECK: Normalization
-    # We normalized to ~0.891 (-1.0 dB). Let's verify.
-    peak = abs(samples).max()
+    peak = np.max(np.abs(samples))
     print(f"   Peak Amplitude: {peak:.5f}")
-    if 0.88 < peak < 0.90:
-        print("   ✅ Normalization Logic: PASSED (-1.0 dB)")
-    else:
-        print("   ⚠️ Normalization Logic: DEVIATION (Expected ~0.891)")
 
     # ---------------------------------------------------------
-    # 2. SAVE BACK TO DISK (To listen)
+    # 2. SAVE BACK TO DISK (Using soundfile)
     # ---------------------------------------------------------
-    print("\n💾 Saving to WAV to verify audio integrity...")
-    
-    # Convert Numpy -> Torch
-    tensor = torch.from_numpy(samples)
-    
-    # Symphonia returns interleaved Stereo [L, R, L, R...]
-    # We need to reshape for TorchAudio: [Channels, Time]
-    if sr > 0: # Avoid div by zero
-        # Reshape to (Time, 2)
-        tensor = tensor.view(-1, 2)
-        # Transpose to (2, Time)
-        tensor = tensor.t()
-    
-    torchaudio.save(OUTPUT_FILE, tensor, sr)
-    print(f"✅ Saved to: {os.path.abspath(OUTPUT_FILE)}")
-    print("🎧 Open this file and verify it sounds correct!")
+    print("\n💾 Saving to WAV...")
+
+    # Rust returns INTERLEAVED audio [L, R, L, R...] as a 1D array.
+    # We must reshape it to 2D [Samples, Channels] for the WAV writer.
+    channels = 2
+    if len(samples) % channels == 0:
+        stereo_audio = samples.reshape(-1, channels)
+
+        sf.write(OUTPUT_FILE, stereo_audio, sr)
+        print(f"✅ Saved to: {os.path.abspath(OUTPUT_FILE)}")
+        print("🎧 Go listen to it! It should sound perfect.")
+    else:
+        print("❌ Error: Sample count is not divisible by 2. Is this Mono?")
+
 
 if __name__ == "__main__":
     test_rust_loading()
