@@ -75,3 +75,4 @@ docs/_build/
 *.lock
 audio/*
 physics_results
+testing
